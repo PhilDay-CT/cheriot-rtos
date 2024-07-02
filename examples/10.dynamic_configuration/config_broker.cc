@@ -21,7 +21,7 @@
 using namespace CHERI;
 
 // Expose debugging features unconditionally for this compartment.
-using Debug = ConditionalDebug<true, "Config Broker ">;
+using Debug = ConditionalDebug<DEBUG_CONFIG_BROKER, "Config Broker">;
 
 //
 // Data type of config data for a compartment
@@ -55,8 +55,7 @@ std::vector<struct Config *> configData;
 //
 ConfigToken *config_capability_unseal(SObj sealedCap)
 {
-	auto            key    = STATIC_SEALING_TYPE(ConfigKey);
-	static uint16_t nextId = 1;
+	auto key = STATIC_SEALING_TYPE(ConfigKey);
 
 	ConfigToken *token =
 	  token_unseal<ConfigToken>(key, Sealed<ConfigToken>{sealedCap});
@@ -67,24 +66,18 @@ ConfigToken *config_capability_unseal(SObj sealedCap)
 		return nullptr;
 	}
 
-	Debug::log("Unsealed id: {} is_source: {} item: {}", token->id, token->is_source, token->configId);
+	Debug::log("Unsealed id: {} kind: {} size:{} item: {}",
+	           token->id,
+	           token->kind,
+	           token->maxSize,
+	           token->configId);
 
 	if (token->id == 0)
 	{
 		// Assign an ID so we can track the callbacks added
 		// from this capability
-		token->id = nextId++;
-
-		// Count how many config ids are defined to
-		// save us having to do this each time
-/*		for (auto & __capability i : token->configId)
-		{
-			if (strlen(i))
-			{
-				token->count++;
-			}
-		}
-*/
+		static uint16_t nextId = 1;
+		token->id              = nextId++;
 	}
 
 	return token;
@@ -94,7 +87,7 @@ ConfigToken *config_capability_unseal(SObj sealedCap)
 // Find a Config by name.  If it doesn't already exist
 // create one.
 //
-Config *find_config(const char *name)
+Config *find_or_create_config(const char *name)
 {
 	for (auto &c : configData)
 	{
@@ -145,63 +138,77 @@ void add_callback(Config               *c,
 }
 
 //
-// Set a configuration data item.  The capabailty must have the
-// is_source set to true and include the name of the item being
-// set
+// Set a new value for the configuration item described by
+// the capability.
 //
-void __cheri_compartment("config_broker")
-  set_config(SObj sealedCap, void *data)
+int __cheri_compartment("config_broker")
+  set_config(SObj sealedCap, void *data, size_t size)
 {
 	ConfigToken *token = config_capability_unseal(sealedCap);
-
-	if (!token->is_source)
+	if (token == nullptr)
 	{
-		Debug::log("Not a source capability: {}", sealedCap);
-		return;
+		Debug::log("Invalid capability: {}", sealedCap);
+		return -1;
 	}
 
-	bool valid = false;
-
-	/*
-	for (auto i = 0; i < token->count; i++)
+	// Check we have a WriteToken
+	if (token->kind != WriteToken)
 	{
-		if (strcmp(token->configId[i], name) == 0)
-		{
-			valid = true;
-			break;
-		}
+		Debug::log(
+		  "Not a write capability for {}: {}", token->configId, sealedCap);
+		return -1;
 	}
-	
-	if (!valid)
+
+	// Check the size and data are consistent with the token
+	// and each other.
+	if (size > token->maxSize)
 	{
-		Debug::log("Not a source capability for: {} {}", sealedCap, name);
-		return;
+		Debug::log("invalid size {} for capability: {}", size, sealedCap);
+		return -1;
 	}
-	*/
 
-	// See if we already have a config structure
-	Config *c = find_config(token->configId);
+	if (size > static_cast<size_t>(Capability{data}.bounds()))
+	{
+		Debug::log("size {} > data.bounds() {}", size, data);
+		return -1;
+	}
 
-	// Free any claim we had on the previous data
+	// Find or create a config structure
+	Config *c = find_or_create_config(token->configId);
+
+	// Allocate heap space for the new value
+	void *newData = malloc(size);
+	if (newData == nullptr)
+	{
+		Debug::log("Failed to allocate space for {}", token->configId);
+		return -1;
+	}
+
+	// If we were paranoid about the incomming data we could make this
+	// something that we call into a separate compartment to do 
+	memcpy(newData, data, size);
+
+	// Free the old data value.  Any subscribers that received it should
+	// have thier own claim on it if needed
 	if (c->data)
 	{
-		heap_free(MALLOC_CAPABILITY, c->data);
+		free(c->data);
 	}
 
-	// Create a read only version of the capability to pass to
-	// the subscribers, and add a claim so we can deliver it
-	// when a compartment registers a callback.
-	CHERI::Capability readOnlyData{data};
-	readOnlyData.permissions() &=
+	// Neither we nor the subscribers need to be able to update the
+	// value, so just track through a readOnly capabaility
+	c->data = newData;
+	CHERI::Capability(c->data).permissions() &=
 	  {CHERI::Permission::Load, CHERI::Permission::Global};
-	c->data = readOnlyData;
-	heap_claim(MALLOC_CAPABILITY, c->data);
 
 	// Mark it as having been updated
 	c->updated = true;
 
+	// Trigger out thread to process the update 
 	pending++;
 	futex_wake(&pending, -1);
+
+	return 0;
 }
 
 //
@@ -223,19 +230,19 @@ void __cheri_compartment("config_broker")
 		return;
 	}
 
-	//for (auto i = 0; i < token->count; i++)
+	// for (auto i = 0; i < token->count; i++)
 	//{
-		Debug::log("thread {} on_config called for {} by id {}",
-		           thread_id_get(),
-		           static_cast<const char *>(token->configId),
-		           token->id);
+	Debug::log("thread {} on_config called for {} by id {}",
+	           thread_id_get(),
+	           static_cast<const char *>(token->configId),
+	           token->id);
 
-		auto c = find_config(token->configId);
-		add_callback(c, token->id, cb);
-		if (c->data)
-		{
-			cb(token->configId, c->data);
-		}
+	auto c = find_or_create_config(token->configId);
+	add_callback(c, token->id, cb);
+	if (c->data)
+	{
+		cb(token->configId, c->data);
+	}
 	//}
 }
 

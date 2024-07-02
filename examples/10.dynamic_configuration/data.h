@@ -14,7 +14,7 @@ struct Data
 {
 	uint32_t count;
 	uint32_t padding;
-	char     token[8];
+	char     token[16];
 };
 
 // Helper fucntion for the example to print a config item

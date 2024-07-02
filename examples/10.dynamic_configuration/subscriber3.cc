@@ -12,20 +12,19 @@
 // read access to configuration data "config1" and "config2"
 #include "config_broker.h"
 #define CONFIG1 "config1"
-DEFINE_CONFIG_CAPABILITY(CONFIG1)
+DEFINE_READ_CONFIG_CAPABILITY(CONFIG1)
 #define CONFIG2 "config2"
-DEFINE_CONFIG_CAPABILITY(CONFIG2)
-
+DEFINE_READ_CONFIG_CAPABILITY(CONFIG2)
 
 // Expose debugging features unconditionally for this compartment.
-using Debug = ConditionalDebug<true, "Compartment #3">;
+using Debug = ConditionalDebug<true, "Subscriber #3">;
 
 #include "data.h"
 #include "sleep.h"
 #include "validator.h"
 
-Data *config_1 = nullptr;
-Data *config_2 = nullptr;
+Data *config1 = nullptr;
+Data *config2 = nullptr;
 
 //
 // Callback to handle config updates.  We
@@ -48,17 +47,17 @@ void __cheri_callback update_config_1(const char *id, void *data)
 	// object and add a claim to the object so we
 	// still have  access to it outside hee scope
 	// of this call
-	if ((config_1 != data))
+	if ((config1 != data))
 	{
-		if (config_1 != nullptr)
+		if (config1 != nullptr)
 		{
-			heap_free(MALLOC_CAPABILITY, config_1);
+			heap_free(MALLOC_CAPABILITY, config1);
 		}
 		heap_claim(MALLOC_CAPABILITY, data);
 	}
 
-	config_1 = static_cast<Data *>(data);
-	print_config("Update", "config1", config_1);
+	config1 = static_cast<Data *>(data);
+	print_config("Update", "config1", config1);
 }
 
 void __cheri_callback update_config_2(const char *id, void *data)
@@ -78,36 +77,35 @@ void __cheri_callback update_config_2(const char *id, void *data)
 	// object and add a claim to the object so we
 	// still have  access to it outside hee scope
 	// of this call
-	if ((config_2 != data))
+	if ((config2 != data))
 	{
-		if (config_2 != nullptr)
+		if (config2 != nullptr)
 		{
-			heap_free(MALLOC_CAPABILITY, config_2);
+			heap_free(MALLOC_CAPABILITY, config2);
 		}
 		heap_claim(MALLOC_CAPABILITY, data);
 	}
 
-	config_2 = static_cast<Data *>(data);
-	print_config("Update", "config2", config_2);
+	config2 = static_cast<Data *>(data);
+	print_config("Update", "config2", config2);
 }
-
 
 //
 // Thread entry point.
 //
-void __cheri_compartment("comp3") init()
+void __cheri_compartment("subscriber3") init()
 {
 	// Register to get config updates
 	Debug::log("thread {} Register for config updates", thread_id_get());
-	on_config(CONFIG_CAPABILITY(CONFIG1), update_config_1);
-	on_config(CONFIG_CAPABILITY(CONFIG2), update_config_2);
+	on_config(READ_CONFIG_CAPABILITY(CONFIG1), update_config_1);
+	on_config(READ_CONFIG_CAPABILITY(CONFIG2), update_config_2);
 
 	// Loop printing our config value occasionally
 	while (true)
 	{
 		sleep(4700);
-		print_config("Timer ", "config1", config_1);
-		print_config("Timer ", "config2", config_2);
+		print_config("Timer ", "config1", config1);
+		print_config("Timer ", "config2", config2);
 
 		// Check we're not leaking data;
 		// Debug::log("heap quota available: {}",

@@ -9,13 +9,14 @@
 #include <thread.h>
 
 // Define a sealed capability that gives this compartment
-// read access to configuration data "config2"
+// read access to configuration data "config1"
 #include "config_broker.h"
-#define CONFIG2 "config2"
-DEFINE_CONFIG_CAPABILITY(CONFIG2)
+
+#define CONFIG1 "config1"
+DEFINE_READ_CONFIG_CAPABILITY(CONFIG1)
 
 // Expose debugging features unconditionally for this compartment.
-using Debug = ConditionalDebug<true, "Compartment #2">;
+using Debug = ConditionalDebug<true, "Subscriber #1">;
 
 #include "data.h"
 #include "sleep.h"
@@ -24,6 +25,7 @@ using Debug = ConditionalDebug<true, "Compartment #2">;
 // Local pointer to the most recent config value;
 Data *config = nullptr;
 
+//
 // Callback to handle config updates
 //
 void __cheri_callback update(const char *id, void *data)
@@ -59,17 +61,17 @@ void __cheri_callback update(const char *id, void *data)
 //
 // Thread entry point.
 //
-void __cheri_compartment("comp2") init()
+void __cheri_compartment("subscriber1") init()
 {
 	// Register to get config updates
 	Debug::log("thread {} Register for config updates", thread_id_get());
-	on_config(CONFIG_CAPABILITY(CONFIG2), update);
+	on_config(READ_CONFIG_CAPABILITY(CONFIG1), update);
 
 	// Loop printing our config value occasionally
 	while (true)
 	{
-		sleep(4600);
-		print_config("Timer ", "config2", config);
+		sleep(4500);
+		print_config("Timer ", "config1", config);
 
 		// Check we're not leaking data;
 		// Debug::log("heap quota available: {}",

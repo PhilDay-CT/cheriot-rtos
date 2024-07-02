@@ -15,7 +15,9 @@ option("board")
     set_default("ibex-safe-simulator")
 
 -- Configuration Broker
+debugOption("config_broker");
 compartment("config_broker")
+    add_rules("cheriot.component-debug")
     add_files("config_broker.cc")
 
 -- Configurtaion Source
@@ -23,16 +25,19 @@ compartment("config_source")
     add_files("config_source.cc")
 
 -- Compartments to be configured
-compartment("comp1")
-    add_files("comp1.cc")
-compartment("comp2")
-    add_files("comp2.cc")
-compartment("comp3")
-    add_files("comp3.cc")
+compartment("subscriber1")
+    add_files("subscriber1.cc")
+compartment("subscriber2")
+    add_files("subscriber2.cc")
+compartment("subscriber3")
+    add_files("subscriber3.cc")
 
 -- Valdation sandpit
 compartment("validator")
     add_files("validator.cc")
+
+-- Debug options
+debugOption("config_broker")
 
 -- Firmware image for the example.
 firmware("compartment_config")
@@ -40,7 +45,7 @@ firmware("compartment_config")
     add_deps("freestanding", "debug")
     add_deps("config_source")
     add_deps("config_broker")
-    add_deps("comp1", "comp2", "comp3")
+    add_deps("subscriber1", "subscriber2", "subscriber3")
     add_deps("validator")
     add_deps("string")
     on_load(function(target)
@@ -61,21 +66,21 @@ firmware("compartment_config")
                 trusted_stack_frames = 2
             },
             {
-                compartment = "comp1",
+                compartment = "subscriber1",
                 priority = 3,
                 entry_point = "init",
                 stack_size = 0x400,
                 trusted_stack_frames = 4
             },
             {
-                compartment = "comp2",
+                compartment = "subscriber2",
                 priority = 1,
                 entry_point = "init",
                 stack_size = 0x400,
                 trusted_stack_frames = 4
             },
             {
-                compartment = "comp3",
+                compartment = "subscriber3",
                 priority = 1,
                 entry_point = "init",
                 stack_size = 0x400,
