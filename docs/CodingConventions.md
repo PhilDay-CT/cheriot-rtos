@@ -194,7 +194,8 @@ Ensure that pointers to sub-objects passed to a compartment are correctly bounde
 Use rich types
 --------------
 
-Public interfaces to compartments may need to be usable from C and so provide an `int` return with negative values indicating success.
+Public interfaces to compartments may need to be usable from C and so provide an `int` return with negative values indicating failure.
+This also aligns with the return value from the default compartment error handler.  
 Internal interfaces or things that can be guaranteed to be exposed only to higher-level languages should use option or variant types.
 For example, consider this C API:
 
